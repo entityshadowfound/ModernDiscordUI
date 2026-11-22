@@ -1,131 +1,183 @@
 package com.github.yournamehere
 
+import android.app.Activity
 import android.content.Context
+import android.graphics.Color
+import android.graphics.Outline
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
-import com.aliucord.api.CommandsAPI
-import com.aliucord.entities.MessageEmbedBuilder
 import com.aliucord.entities.Plugin
-import com.aliucord.patcher.*
-import com.aliucord.wrappers.embeds.MessageEmbedWrapper.Companion.title
-import com.discord.api.commands.ApplicationCommandType
-import com.discord.models.user.CoreUser
-import com.discord.stores.StoreUserTyping
+import com.aliucord.patcher.after
+import com.aliucord.utils.DimenUtils
+import com.discord.app.AppActivity
+import com.discord.widgets.channels.list.WidgetChannelsList
+import com.discord.widgets.channels.memberlist.WidgetChannelMembersList
+import com.discord.widgets.chat.input.WidgetChatInputEditText
+import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemEmbed
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
 import com.discord.widgets.chat.list.entries.ChatListEntry
-import com.discord.widgets.chat.list.entries.MessageEntry
+import com.discord.widgets.guilds.list.WidgetGuildsListAdapterItemGuild
+import com.discord.widgets.tabs.WidgetTabsHost
+import com.discord.widgets.user.usersheet.WidgetUserSheet
 
-// Aliucord Plugin annotation. Must be present on the main class of your plugin
-// Plugin class. Must extend Plugin and override start and stop
-// Learn more: https://github.com/Aliucord/documentation/blob/main/plugin-dev/1_introduction.md#basic-plugin-structure
-@AliucordPlugin(
-    requiresRestart = false, // Whether your plugin requires a restart after being installed/updated
-)
-@Suppress("unused")
-class MyFirstKotlinPlugin : Plugin() {
+@AliucordPlugin
+class ModernDiscordUI : Plugin() {
+
+    // Modern Discord Mobile Color Palette (Onyx / Dark)
+    private val modernBg = Color.parseColor("#1C1D22")
+    private val modernSidebarBg = Color.parseColor("#141519")
+    private val modernSurface = Color.parseColor("#26272F")
+    private val modernMessageCard = Color.parseColor("#212228")
+    private val modernStroke = Color.parseColor("#32343F")
+
     override fun start(context: Context) {
-        // Register a command with the name hello and description "My first command!" and no arguments.
-        // Learn more: https://github.com/Aliucord/documentation/blob/main/plugin-dev/2_commands.md
-        commands.registerCommand("hello", "My first command!") {
-            // Just return a command result with hello world as the content
-            CommandsAPI.CommandResult(
-                "Hello World!",
-                null, // List of embeds
-                false, // Whether to send visible for everyone
-            )
-        }
-
-        // A bit more advanced command with arguments
-        commands.registerCommand(
-            "hellowitharguments",
-            "Hello World but with arguments!",
-            listOf(
-                Utils.createCommandOption(
-                    ApplicationCommandType.STRING,
-                    "name",
-                    "Person to say hello to",
-                ),
-                Utils.createCommandOption(
-                    ApplicationCommandType.USER,
-                    "user",
-                    "User to say hello to",
-                ),
-            ),
-        ) { ctx ->
-            // Check if a user argument was passed
-            val username = if (ctx.containsArg("user")) {
-                ctx.getRequiredUser("user").username
-            } else {
-                // Returns either the argument value if present, or the defaultValue ("World" in this case)
-                ctx.getStringOrDefault("name", "World")
-            }
-
-            // Return the final result that will be displayed in chat as a response to the command
-            CommandsAPI.CommandResult("Hello $username!")
-        }
-
-        // Patch that adds an embed with message statistics to each message
-        // Patched method is WidgetChatListAdapterItemMessage.onConfigure(int type, ChatListEntry entry)
-        patcher.after<WidgetChatListAdapterItemMessage>(
-            "onConfigure", // Method name
-            // Refer to https://kotlinlang.org/docs/reflection.html#class-references
-            // and https://docs.oracle.com/javase/tutorial/reflect/class/classNew.html
-            Int::class.java, // int type
-            ChatListEntry::class.java, // ChatListEntry entry
+        // 1. App-Wide Window, Status Bar & Nav Bar Palette
+        patcher.after<AppActivity>(
+            "onCreate",
+            Bundle::class.java
         ) { param ->
-            // see https://api.xposed.info/reference/de/robv/android/xposed/XC_MethodHook.MethodHookParam.html
-            // Obtain the second argument passed to the method, so the ChatListEntry
-            // Because this is a Message item, it will always be a MessageEntry, so cast it to that
-            val entry = param.args[1] as MessageEntry
-            val message = entry.message
-
-            // You need to be careful when messing with messages, because they may be loading
-            // (user sent a message, and it is currently sending)
-            if (message.isLoading) return@after
-
-            // Now add an embed with the statistics
-
-            // This method may be called multiple times per message, e.g. if it is edited,
-            // so first remove existing embeds
-            message.embeds.removeAll {
-                // MessageEmbed.getTitle() is actually obfuscated, but Aliucord provides extensions for commonly used
-                // obfuscated Discord classes, so just import the MessageEmbed.title extension and boom goodbye obfuscation!
-                it.title == "Message Statistics"
-            }
-
-            // Creating embeds is a pain, so Aliucord provides a convenient builder
-            MessageEmbedBuilder().run {
-                setTitle("Message Statistics")
-                addField("Length", "${message.content?.length ?: 0}", false)
-                addField("ID", message.id.toString(), false)
-
-                message.embeds.add(build())
-            }
+            val activity = param.thisObject as Activity
+            activity.window?.setBackgroundDrawable(ColorDrawable(modernBg))
+            activity.window?.statusBarColor = modernSidebarBg
+            activity.window?.navigationBarColor = modernSidebarBg
         }
 
-        // Patch that renames Juby to JoobJoob
-        patcher.before<CoreUser>("getUsername") { param ->
-            // see https://api.xposed.info/reference/de/robv/android/xposed/XC_MethodHook.MethodHookParam.html
-            // in before, after and instead patches, `this` refers to the instance of the class
-            // the patched method is on, so the CoreUser instance here
-            if (id == 925141667688878090) {
-                // setResult() in before patches skips original method invocation
-                param.result = "JoobJoob"
-            }
+        // 2. Modern Bottom Navigation Bar (Servers / Messages / Notifications / You)
+        patcher.after<WidgetTabsHost>(
+            "onViewBound",
+            View::class.java
+        ) { param ->
+            val view = param.args as? View ?: return@after
+            val navBarId = Utils.getResId("tabs_host_bottom_nav", "id")
+            val navBar = if (navBarId != 0) view.findViewById<View>(navBarId) else null
+            navBar?.setBackgroundColor(modernSidebarBg)
         }
 
-        // Patch that hides your typing status by replacing the method and simply doing nothing
-        patcher.instead<StoreUserTyping>(
-            "setUserTyping",
-            Long::class.java, // java.lang.Long channelId
-        ) {
-            // Return null
-            null
+        // 3. Modern "Squircle" Server Icons in Left Rail
+        patcher.after<WidgetGuildsListAdapterItemGuild>(
+            "onConfigure",
+            Int::class.java,
+            Any::class.java
+        ) { param ->
+            val itemView = (param.thisObject as WidgetGuildsListAdapterItemGuild).itemView
+            val radius = DimenUtils.dpToPx(16).toFloat()
+            itemView.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) {
+                    outline.setRoundRect(0, 0, view.width, view.height, radius)
+                }
+            }
+            itemView.clipToOutline = true
+        }
+
+        // 4. Floating Rounded Channel Sidebar
+        patcher.after<WidgetChannelsList>(
+            "onViewBound",
+            View::class.java
+        ) { param ->
+            val view = param.args as? View ?: return@after
+            val sidebarBg = GradientDrawable().apply {
+                setColor(modernSidebarBg)
+                cornerRadii = floatArrayOf(
+                    DimenUtils.dpToPx(22).toFloat(), DimenUtils.dpToPx(22).toFloat(),
+                    DimenUtils.dpToPx(22).toFloat(), DimenUtils.dpToPx(22).toFloat(),
+                    0f, 0f, 0f, 0f
+                )
+            }
+            view.background = sidebarBg
+        }
+
+        // 5. Modern Member List Panel
+        patcher.after<WidgetChannelMembersList>(
+            "onViewBound",
+            View::class.java
+        ) { param ->
+            val view = param.args as? View ?: return@after
+            view.setBackgroundColor(modernSidebarBg)
+        }
+
+        // 6. Modern Rounded User Profile Popup Sheet
+        patcher.after<WidgetUserSheet>(
+            "onViewBound",
+            View::class.java
+        ) { param ->
+            val view = param.args as? View ?: return@after
+            val sheetBg = GradientDrawable().apply {
+                setColor(modernSurface)
+                cornerRadii = floatArrayOf(
+                    DimenUtils.dpToPx(24).toFloat(), DimenUtils.dpToPx(24).toFloat(),
+                    DimenUtils.dpToPx(24).toFloat(), DimenUtils.dpToPx(24).toFloat(),
+                    0f, 0f, 0f, 0f
+                )
+            }
+            view.background = sheetBg
+        }
+
+        // 7. Modern Chat Message Containers
+        patcher.after<WidgetChatListAdapterItemMessage>(
+            "onConfigure",
+            Int::class.java,
+            ChatListEntry::class.java
+        ) { param ->
+            val itemView = (param.thisObject as WidgetChatListAdapterItemMessage).itemView
+            val msgBg = GradientDrawable().apply {
+                setColor(modernMessageCard)
+                cornerRadius = DimenUtils.dpToPx(14).toFloat()
+            }
+            itemView.background = msgBg
+            val padH = DimenUtils.dpToPx(10)
+            val padV = DimenUtils.dpToPx(6)
+            itemView.setPadding(padH, padV, padH, padV)
+        }
+
+        // 8. Rounded Embed Cards with Modern Border
+        patcher.after<WidgetChatListAdapterItemEmbed>(
+            "onConfigure",
+            Int::class.java,
+            ChatListEntry::class.java
+        ) { param ->
+            val itemView = (param.thisObject as WidgetChatListAdapterItemEmbed).itemView
+            val cardBg = GradientDrawable().apply {
+                setColor(modernSurface)
+                cornerRadius = DimenUtils.dpToPx(16).toFloat()
+                setStroke(DimenUtils.dpToPx(1), modernStroke)
+            }
+            itemView.background = cardBg
+        }
+
+        // 9. Pill-Shaped Floating Chat Input & Decluttered Toolbar
+        patcher.after<WidgetChatInputEditText>(
+            "onViewBound",
+            View::class.java
+        ) { param ->
+            val rootView = param.args as? View ?: return@after
+            val parent = rootView.parent as? ViewGroup ?: return@after
+
+            val pillBackground = GradientDrawable().apply {
+                setColor(modernSurface)
+                cornerRadius = DimenUtils.dpToPx(24).toFloat()
+                setStroke(DimenUtils.dpToPx(1), modernStroke)
+            }
+
+            parent.background = pillBackground
+            val padH = DimenUtils.dpToPx(14)
+            val padV = DimenUtils.dpToPx(4)
+            parent.setPadding(padH, padV, padH, padV)
+
+            // Hide Nitro Gift button
+            val giftBtnId = Utils.getResId("chat_input_gift_button", "id")
+            if (giftBtnId != 0) {
+                parent.rootView.findViewById<View>(giftBtnId)?.visibility = View.GONE
+            }
         }
     }
 
     override fun stop(context: Context) {
-        // Remove all patches
         patcher.unpatchAll()
     }
 }
