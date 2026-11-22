@@ -1,4 +1,4 @@
-package com.github.yournamehere
+.package com.github.yournamehere
 
 import android.app.Activity
 import android.content.Context
@@ -7,6 +7,7 @@ import android.graphics.Outline
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -16,15 +17,19 @@ import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
 import com.aliucord.utils.DimenUtils
 import com.discord.app.AppActivity
+import com.discord.stores.StoreStream
 import com.discord.widgets.channels.list.WidgetChannelsList
 import com.discord.widgets.channels.memberlist.WidgetChannelMembersList
 import com.discord.widgets.chat.input.WidgetChatInputEditText
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemEmbed
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
 import com.discord.widgets.chat.list.entries.ChatListEntry
+import com.discord.widgets.guilds.list.WidgetGuildsListAdapterItemDirectMessage
 import com.discord.widgets.guilds.list.WidgetGuildsListAdapterItemGuild
+import com.discord.widgets.tabs.NavigationTab
 import com.discord.widgets.tabs.WidgetTabsHost
 import com.discord.widgets.user.usersheet.WidgetUserSheet
+import com.google.android.material.bottomnavigation.BottomNavigationView
 
 @AliucordPlugin
 class ModernDiscordUI : Plugin() {
@@ -35,6 +40,28 @@ class ModernDiscordUI : Plugin() {
     private val modernSurface = Color.parseColor("#26272F")
     private val modernMessageCard = Color.parseColor("#212228")
     private val modernStroke = Color.parseColor("#32343F")
+
+    private val customMessagesTabId = 990011
+
+    // Helper to recolor legacy Discord dark grey backgrounds inside a layout tree
+    private fun recolorLegacySurfaces(view: View, targetColor: Int) {
+        val bg = view.background
+        if (bg is ColorDrawable) {
+            val c = bg.color
+            if (c == Color.parseColor("#36393F") ||
+                c == Color.parseColor("#2F3136") ||
+                c == Color.parseColor("#202225") ||
+                c == Color.parseColor("#292B2F")
+            ) {
+                view.setBackgroundColor(targetColor)
+            }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                recolorLegacySurfaces(view.getChildAt(i), targetColor)
+            }
+        }
+    }
 
     override fun start(context: Context) {
         // 1. App-Wide Window, Status Bar & Nav Bar Palette
@@ -48,18 +75,55 @@ class ModernDiscordUI : Plugin() {
             activity.window?.navigationBarColor = modernSidebarBg
         }
 
-        // 2. Modern Bottom Navigation Bar (Servers / Messages / Notifications / You)
+        // 2. Modern Bottom Navigation Bar + "Messages" Tab in Bottom Bar
         patcher.after<WidgetTabsHost>(
             "onViewBound",
             View::class.java
         ) { param ->
-            val view = param.args as? View ?: return@after
+            val view = param.args[0] as? View ?: return@after
+            recolorLegacySurfaces(view, modernSidebarBg)
+
             val navBarId = Utils.getResId("tabs_host_bottom_nav", "id")
-            val navBar = if (navBarId != 0) view.findViewById<View>(navBarId) else null
-            navBar?.setBackgroundColor(modernSidebarBg)
+            val navBar = if (navBarId != 0) view.findViewById<BottomNavigationView>(navBarId) else null
+
+            if (navBar != null) {
+                navBar.setBackgroundColor(modernSidebarBg)
+
+                // Inject modern "Messages" tab into bottom bar if not already added
+                if (navBar.menu.findItem(customMessagesTabId) == null) {
+                    val chatIconId = Utils.getResId("ic_chat_bubble_white_24dp", "drawable")
+                        .takeIf { it != 0 } ?: android.R.drawable.sym_action_chat
+
+                    val messagesItem = navBar.menu.add(
+                        Menu.NONE,
+                        customMessagesTabId,
+                        1,
+                        "Messages"
+                    )
+                    messagesItem.setIcon(chatIconId)
+
+                    messagesItem.setOnMenuItemClickListener {
+                        // Switch selected guild to 0 (Private Channels / DMs) and open Home drawer
+                        StoreStream.getGuildSelected().set(0L)
+                        StoreStream.getTabsNavigation().selectTab(NavigationTab.HOME, false)
+                        true
+                    }
+                }
+            }
         }
 
-        // 3. Modern "Squircle" Server Icons in Left Rail
+        // 3. Hide Legacy DM Button at the Top of the Server Rail
+        patcher.after<WidgetGuildsListAdapterItemDirectMessage>(
+            "onConfigure",
+            Int::class.java,
+            Any::class.java
+        ) { param ->
+            val itemView = (param.thisObject as WidgetGuildsListAdapterItemDirectMessage).itemView
+            itemView.visibility = View.GONE
+            itemView.layoutParams?.height = 0
+        }
+
+        // 4. Modern "Squircle" Server Icons in Left Rail
         patcher.after<WidgetGuildsListAdapterItemGuild>(
             "onConfigure",
             Int::class.java,
@@ -75,12 +139,13 @@ class ModernDiscordUI : Plugin() {
             itemView.clipToOutline = true
         }
 
-        // 4. Floating Rounded Channel Sidebar
+        // 5. Floating Rounded Channel Sidebar
         patcher.after<WidgetChannelsList>(
             "onViewBound",
             View::class.java
         ) { param ->
-            val view = param.args as? View ?: return@after
+            val view = param.args[0] as? View ?: return@after
+            recolorLegacySurfaces(view, modernSidebarBg)
             val sidebarBg = GradientDrawable().apply {
                 setColor(modernSidebarBg)
                 cornerRadii = floatArrayOf(
@@ -92,21 +157,23 @@ class ModernDiscordUI : Plugin() {
             view.background = sidebarBg
         }
 
-        // 5. Modern Member List Panel
+        // 6. Modern Member List Panel
         patcher.after<WidgetChannelMembersList>(
             "onViewBound",
             View::class.java
         ) { param ->
-            val view = param.args as? View ?: return@after
+            val view = param.args[0] as? View ?: return@after
+            recolorLegacySurfaces(view, modernSidebarBg)
             view.setBackgroundColor(modernSidebarBg)
         }
 
-        // 6. Modern Rounded User Profile Popup Sheet
+        // 7. Modern Rounded User Profile Popup Sheet
         patcher.after<WidgetUserSheet>(
             "onViewBound",
             View::class.java
         ) { param ->
-            val view = param.args as? View ?: return@after
+            val view = param.args[0] as? View ?: return@after
+            recolorLegacySurfaces(view, modernSurface)
             val sheetBg = GradientDrawable().apply {
                 setColor(modernSurface)
                 cornerRadii = floatArrayOf(
@@ -118,7 +185,7 @@ class ModernDiscordUI : Plugin() {
             view.background = sheetBg
         }
 
-        // 7. Modern Chat Message Containers
+        // 8. Modern Chat Message Containers
         patcher.after<WidgetChatListAdapterItemMessage>(
             "onConfigure",
             Int::class.java,
@@ -135,7 +202,7 @@ class ModernDiscordUI : Plugin() {
             itemView.setPadding(padH, padV, padH, padV)
         }
 
-        // 8. Rounded Embed Cards with Modern Border
+        // 9. Rounded Embed Cards with Modern Border
         patcher.after<WidgetChatListAdapterItemEmbed>(
             "onConfigure",
             Int::class.java,
@@ -150,12 +217,12 @@ class ModernDiscordUI : Plugin() {
             itemView.background = cardBg
         }
 
-        // 9. Pill-Shaped Floating Chat Input & Decluttered Toolbar
+        // 10. Pill-Shaped Floating Chat Input & Decluttered Toolbar
         patcher.after<WidgetChatInputEditText>(
             "onViewBound",
             View::class.java
         ) { param ->
-            val rootView = param.args as? View ?: return@after
+            val rootView = param.args[0] as? View ?: return@after
             val parent = rootView.parent as? ViewGroup ?: return@after
 
             val pillBackground = GradientDrawable().apply {
