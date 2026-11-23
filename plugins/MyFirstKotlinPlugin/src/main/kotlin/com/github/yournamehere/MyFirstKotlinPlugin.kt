@@ -1,16 +1,20 @@
-.package com.github.yournamehere
-
+package com.github.entityshadowfound
 import android.app.Activity
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Outline
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.view.Menu
+import android.text.TextUtils
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.widget.HorizontalScrollView
+import android.widget.LinearLayout
+import android.widget.TextView
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
@@ -24,227 +28,317 @@ import com.discord.widgets.chat.input.WidgetChatInputEditText
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemEmbed
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
 import com.discord.widgets.chat.list.entries.ChatListEntry
-import com.discord.widgets.guilds.list.WidgetGuildsListAdapterItemDirectMessage
 import com.discord.widgets.guilds.list.WidgetGuildsListAdapterItemGuild
 import com.discord.widgets.tabs.NavigationTab
 import com.discord.widgets.tabs.WidgetTabsHost
 import com.discord.widgets.user.usersheet.WidgetUserSheet
-import com.google.android.material.bottomnavigation.BottomNavigationView
-
 @AliucordPlugin
 class ModernDiscordUI : Plugin() {
-
-    // Modern Discord Mobile Color Palette (Onyx / Dark)
-    private val modernBg = Color.parseColor("#1C1D22")
-    private val modernSidebarBg = Color.parseColor("#141519")
-    private val modernSurface = Color.parseColor("#26272F")
-    private val modernMessageCard = Color.parseColor("#212228")
-    private val modernStroke = Color.parseColor("#32343F")
-
-    private val customMessagesTabId = 990011
-
-    // Helper to recolor legacy Discord dark grey backgrounds inside a layout tree
-    private fun recolorLegacySurfaces(view: View, targetColor: Int) {
-        val bg = view.background
-        if (bg is ColorDrawable) {
-            val c = bg.color
-            if (c == Color.parseColor("#36393F") ||
-                c == Color.parseColor("#2F3136") ||
-                c == Color.parseColor("#202225") ||
-                c == Color.parseColor("#292B2F")
-            ) {
-                view.setBackgroundColor(targetColor)
-            }
-        }
-        if (view is ViewGroup) {
-            for (i in 0 until view.childCount) {
-                recolorLegacySurfaces(view.getChildAt(i), targetColor)
-            }
-        }
-    }
-
-    override fun start(context: Context) {
-        // 1. App-Wide Window, Status Bar & Nav Bar Palette
-        patcher.after<AppActivity>(
-            "onCreate",
-            Bundle::class.java
-        ) { param ->
-            val activity = param.thisObject as Activity
-            activity.window?.setBackgroundDrawable(ColorDrawable(modernBg))
-            activity.window?.statusBarColor = modernSidebarBg
-            activity.window?.navigationBarColor = modernSidebarBg
-        }
-
-        // 2. Modern Bottom Navigation Bar + "Messages" Tab in Bottom Bar
-        patcher.after<WidgetTabsHost>(
-            "onViewBound",
-            View::class.java
-        ) { param ->
-            val view = param.args[0] as? View ?: return@after
-            recolorLegacySurfaces(view, modernSidebarBg)
-
-            val navBarId = Utils.getResId("tabs_host_bottom_nav", "id")
-            val navBar = if (navBarId != 0) view.findViewById<BottomNavigationView>(navBarId) else null
-
-            if (navBar != null) {
-                navBar.setBackgroundColor(modernSidebarBg)
-
-                // Inject modern "Messages" tab into bottom bar if not already added
-                if (navBar.menu.findItem(customMessagesTabId) == null) {
-                    val chatIconId = Utils.getResId("ic_chat_bubble_white_24dp", "drawable")
-                        .takeIf { it != 0 } ?: android.R.drawable.sym_action_chat
-
-                    val messagesItem = navBar.menu.add(
-                        Menu.NONE,
-                        customMessagesTabId,
-                        1,
-                        "Messages"
-                    )
-                    messagesItem.setIcon(chatIconId)
-
-                    messagesItem.setOnMenuItemClickListener {
-                        // Switch selected guild to 0 (Private Channels / DMs) and open Home drawer
-                        StoreStream.getGuildSelected().set(0L)
-                        StoreStream.getTabsNavigation().selectTab(NavigationTab.HOME, false)
-                        true
-                    }
-                }
-            }
-        }
-
-        // 3. Hide Legacy DM Button at the Top of the Server Rail
-        patcher.after<WidgetGuildsListAdapterItemDirectMessage>(
-            "onConfigure",
-            Int::class.java,
-            Any::class.java
-        ) { param ->
-            val itemView = (param.thisObject as WidgetGuildsListAdapterItemDirectMessage).itemView
-            itemView.visibility = View.GONE
-            itemView.layoutParams?.height = 0
-        }
-
-        // 4. Modern "Squircle" Server Icons in Left Rail
-        patcher.after<WidgetGuildsListAdapterItemGuild>(
-            "onConfigure",
-            Int::class.java,
-            Any::class.java
-        ) { param ->
-            val itemView = (param.thisObject as WidgetGuildsListAdapterItemGuild).itemView
-            val radius = DimenUtils.dpToPx(16).toFloat()
-            itemView.outlineProvider = object : ViewOutlineProvider() {
-                override fun getOutline(view: View, outline: Outline) {
-                    outline.setRoundRect(0, 0, view.width, view.height, radius)
-                }
-            }
-            itemView.clipToOutline = true
-        }
-
-        // 5. Floating Rounded Channel Sidebar
-        patcher.after<WidgetChannelsList>(
-            "onViewBound",
-            View::class.java
-        ) { param ->
-            val view = param.args[0] as? View ?: return@after
-            recolorLegacySurfaces(view, modernSidebarBg)
-            val sidebarBg = GradientDrawable().apply {
-                setColor(modernSidebarBg)
-                cornerRadii = floatArrayOf(
-                    DimenUtils.dpToPx(22).toFloat(), DimenUtils.dpToPx(22).toFloat(),
-                    DimenUtils.dpToPx(22).toFloat(), DimenUtils.dpToPx(22).toFloat(),
-                    0f, 0f, 0f, 0f
-                )
-            }
-            view.background = sidebarBg
-        }
-
-        // 6. Modern Member List Panel
-        patcher.after<WidgetChannelMembersList>(
-            "onViewBound",
-            View::class.java
-        ) { param ->
-            val view = param.args[0] as? View ?: return@after
-            recolorLegacySurfaces(view, modernSidebarBg)
-            view.setBackgroundColor(modernSidebarBg)
-        }
-
-        // 7. Modern Rounded User Profile Popup Sheet
-        patcher.after<WidgetUserSheet>(
-            "onViewBound",
-            View::class.java
-        ) { param ->
-            val view = param.args[0] as? View ?: return@after
-            recolorLegacySurfaces(view, modernSurface)
-            val sheetBg = GradientDrawable().apply {
-                setColor(modernSurface)
-                cornerRadii = floatArrayOf(
-                    DimenUtils.dpToPx(24).toFloat(), DimenUtils.dpToPx(24).toFloat(),
-                    DimenUtils.dpToPx(24).toFloat(), DimenUtils.dpToPx(24).toFloat(),
-                    0f, 0f, 0f, 0f
-                )
-            }
-            view.background = sheetBg
-        }
-
-        // 8. Modern Chat Message Containers
-        patcher.after<WidgetChatListAdapterItemMessage>(
-            "onConfigure",
-            Int::class.java,
-            ChatListEntry::class.java
-        ) { param ->
-            val itemView = (param.thisObject as WidgetChatListAdapterItemMessage).itemView
-            val msgBg = GradientDrawable().apply {
-                setColor(modernMessageCard)
-                cornerRadius = DimenUtils.dpToPx(14).toFloat()
-            }
-            itemView.background = msgBg
-            val padH = DimenUtils.dpToPx(10)
-            val padV = DimenUtils.dpToPx(6)
-            itemView.setPadding(padH, padV, padH, padV)
-        }
-
-        // 9. Rounded Embed Cards with Modern Border
-        patcher.after<WidgetChatListAdapterItemEmbed>(
-            "onConfigure",
-            Int::class.java,
-            ChatListEntry::class.java
-        ) { param ->
-            val itemView = (param.thisObject as WidgetChatListAdapterItemEmbed).itemView
-            val cardBg = GradientDrawable().apply {
-                setColor(modernSurface)
-                cornerRadius = DimenUtils.dpToPx(16).toFloat()
-                setStroke(DimenUtils.dpToPx(1), modernStroke)
-            }
-            itemView.background = cardBg
-        }
-
-        // 10. Pill-Shaped Floating Chat Input & Decluttered Toolbar
-        patcher.after<WidgetChatInputEditText>(
-            "onViewBound",
-            View::class.java
-        ) { param ->
-            val rootView = param.args[0] as? View ?: return@after
-            val parent = rootView.parent as? ViewGroup ?: return@after
-
-            val pillBackground = GradientDrawable().apply {
-                setColor(modernSurface)
-                cornerRadius = DimenUtils.dpToPx(24).toFloat()
-                setStroke(DimenUtils.dpToPx(1), modernStroke)
-            }
-
-            parent.background = pillBackground
-            val padH = DimenUtils.dpToPx(14)
-            val padV = DimenUtils.dpToPx(4)
-            parent.setPadding(padH, padV, padH, padV)
-
-            // Hide Nitro Gift button
-            val giftBtnId = Utils.getResId("chat_input_gift_button", "id")
-            if (giftBtnId != 0) {
-                parent.rootView.findViewById<View>(giftBtnId)?.visibility = View.GONE
-            }
-        }
-    }
-
-    override fun stop(context: Context) {
-        patcher.unpatchAll()
-    }
+private val onyxBg = Color.parseColor("#000000")
+private val onyxCard = Color.parseColor("#111216")
+private val onyxPill = Color.parseColor("#1A1B20")
+private val onyxStroke = Color.parseColor("#24262E")
+private val textPrimary = Color.parseColor("#F2F3F5")
+private val textSecondary = Color.parseColor("#949BA4")
+private fun recolorSurfaces(view: View, targetColor: Int) {
+val bg = view.background
+if (bg is ColorDrawable) {
+val c = bg.color
+if (c != Color.TRANSPARENT && c != onyxBg) {
+view.setBackgroundColor(targetColor)
+}
+}
+if (view is ViewGroup) {
+for (i in 0 until view.childCount) {
+recolorSurfaces(view.getChildAt(i), targetColor)
+}
+}
+}
+private fun makePill(color: Int, radiusDp: Int, strokeColor: Int = onyxStroke): GradientDrawable {
+return GradientDrawable().apply {
+setColor(color)
+cornerRadius = DimenUtils.dpToPx(radiusDp).toFloat()
+if (strokeColor != 0) {
+setStroke(DimenUtils.dpToPx(1), strokeColor)
+}
+}
+}
+override fun start(context: Context) {
+patcher.after(
+"onCreate",
+Bundle::class.java
+) { param ->
+val activity = param.thisObject as Activity
+activity.window?.setBackgroundDrawable(ColorDrawable(onyxBg))
+activity.window?.statusBarColor = onyxBg
+activity.window?.navigationBarColor = onyxBg
+}
+patcher.after(
+"onConfigure",
+Int::class.java,
+Any::class.java
+) { param ->
+val itemView = (param.thisObject as WidgetGuildsListAdapterItemGuild).itemView
+val radius = DimenUtils.dpToPx(16).toFloat()
+itemView.outlineProvider = object : ViewOutlineProvider() {
+override fun getOutline(view: View, outline: Outline) {
+outline.setRoundRect(0, 0, view.width, view.height, radius)
+}
+}
+itemView.clipToOutline = true
+}
+patcher.after(
+"onViewBound",
+View::class.java
+) { param ->
+val root = param.args[0] as? ViewGroup ?: return@after
+recolorSurfaces(root, onyxBg)
+root.background = GradientDrawable().apply {
+setColor(onyxBg)
+cornerRadii = floatArrayOf(
+DimenUtils.dpToPx(24).toFloat(), DimenUtils.dpToPx(24).toFloat(),
+0f, 0f, 0f, 0f, 0f, 0f
+)
+}
+val ctx = root.context
+if (root.findViewWithTag("modern_dm_header") != null) return@after
+var recyclerView: View? = null
+fun findRecycler(v: View) {
+if (v.javaClass.name.contains("RecyclerView")) {
+recyclerView = v
+return
+}
+if (v is ViewGroup) {
+for (i in 0 until v.childCount) findRecycler(v.getChildAt(i))
+}
+}
+findRecycler(root)
+val rv = recyclerView ?: return@after
+val rvParent = rv.parent as? ViewGroup ?: return@after
+val rvIndex = rvParent.indexOfChild(rv)
+val headerContainer = LinearLayout(ctx).apply {
+tag = "modern_dm_header"
+orientation = LinearLayout.VERTICAL
+setBackgroundColor(onyxBg)
+setPadding(
+DimenUtils.dpToPx(16),
+DimenUtils.dpToPx(12),
+DimenUtils.dpToPx(16),
+DimenUtils.dpToPx(8)
+)
+}
+val titleText = TextView(ctx).apply {
+text = "Messages"
+setTextColor(textPrimary)
+textSize = 22f
+setTypeface(null, Typeface.BOLD)
+setPadding(0, 0, 0, DimenUtils.dpToPx(10))
+}
+headerContainer.addView(titleText)
+val actionRow = LinearLayout(ctx).apply {
+orientation = LinearLayout.HORIZONTAL
+gravity = Gravity.CENTER_VERTICAL
+}
+val searchPill = TextView(ctx).apply {
+text = "🔍"
+setTextColor(textPrimary)
+textSize = 15f
+gravity = Gravity.CENTER
+background = makePill(onyxPill, 20)
+setPadding(DimenUtils.dpToPx(14), DimenUtils.dpToPx(8), DimenUtils.dpToPx(14), DimenUtils.dpToPx(8))
+setOnClickListener {
+StoreStream.getTabsNavigation().selectTab(NavigationTab.SEARCH, false)
+}
+}
+val addFriendsPill = TextView(ctx).apply {
+text = "👤+  Add Friends"
+setTextColor(textPrimary)
+textSize = 14f
+setTypeface(null, Typeface.BOLD)
+gravity = Gravity.CENTER
+background = makePill(onyxPill, 20)
+setPadding(DimenUtils.dpToPx(16), DimenUtils.dpToPx(8), DimenUtils.dpToPx(16), DimenUtils.dpToPx(8))
+layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+marginStart = DimenUtils.dpToPx(8)
+marginEnd = DimenUtils.dpToPx(8)
+}
+setOnClickListener {
+StoreStream.getTabsNavigation().selectTab(NavigationTab.FRIENDS, false)
+}
+}
+val newDmPill = TextView(ctx).apply {
+text = "+"
+setTextColor(textPrimary)
+textSize = 18f
+setTypeface(null, Typeface.BOLD)
+gravity = Gravity.CENTER
+background = makePill(onyxPill, 20)
+setPadding(DimenUtils.dpToPx(14), DimenUtils.dpToPx(6), DimenUtils.dpToPx(14), DimenUtils.dpToPx(6))
+setOnClickListener {
+StoreStream.getTabsNavigation().selectTab(NavigationTab.FRIENDS, false)
+}
+}
+actionRow.addView(searchPill)
+actionRow.addView(addFriendsPill)
+actionRow.addView(newDmPill)
+headerContainer.addView(actionRow)
+val activeScroll = HorizontalScrollView(ctx).apply {
+isHorizontalScrollBarEnabled = false
+setPadding(0, DimenUtils.dpToPx(12), 0, DimenUtils.dpToPx(4))
+}
+val activeRow = LinearLayout(ctx).apply {
+orientation = LinearLayout.HORIZONTAL
+}
+val presences = StoreStream.getPresences().presences
+val users = StoreStream.getUsers().users
+var cardCount = 0
+for ((userId, presence) in presences) {
+if (cardCount >= 8) break
+val user = users[userId] ?: continue
+val activityName = presence.activities?.firstOrNull()?.name ?: continue
+val card = LinearLayout(ctx).apply {
+orientation = LinearLayout.VERTICAL
+background = makePill(onyxCard, 16)
+setPadding(DimenUtils.dpToPx(12), DimenUtils.dpToPx(10), DimenUtils.dpToPx(12), DimenUtils.dpToPx(10))
+layoutParams = LinearLayout.LayoutParams(DimenUtils.dpToPx(135), DimenUtils.dpToPx(88)).apply {
+marginEnd = DimenUtils.dpToPx(8)
+}
+}
+val nameView = TextView(ctx).apply {
+text = user.username
+setTextColor(textPrimary)
+textSize = 13f
+setTypeface(null, Typeface.BOLD)
+maxLines = 1
+ellipsize = TextUtils.TruncateAt.END
+}
+val gameView = TextView(ctx).apply {
+text = "🎮 $activityName"
+setTextColor(textSecondary)
+textSize = 12f
+maxLines = 2
+ellipsize = TextUtils.TruncateAt.END
+setPadding(0, DimenUtils.dpToPx(6), 0, 0)
+}
+card.addView(nameView)
+card.addView(gameView)
+activeRow.addView(card)
+cardCount++
+}
+if (cardCount > 0) {
+activeScroll.addView(activeRow)
+headerContainer.addView(activeScroll)
+}
+rvParent.addView(headerContainer, rvIndex)
+val me = StoreStream.getUsers().me
+if (me != null) {
+val userBar = LinearLayout(ctx).apply {
+orientation = LinearLayout.HORIZONTAL
+gravity = Gravity.CENTER_VERTICAL
+setBackgroundColor(onyxCard)
+setPadding(
+DimenUtils.dpToPx(16),
+DimenUtils.dpToPx(10),
+DimenUtils.dpToPx(16),
+DimenUtils.dpToPx(10)
+)
+setOnClickListener {
+StoreStream.getTabsNavigation().selectTab(NavigationTab.USER_SETTINGS, false)
+}
+}
+val userInfoCol = LinearLayout(ctx).apply {
+orientation = LinearLayout.VERTICAL
+layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+}
+val usernameTv = TextView(ctx).apply {
+text = "${me.username} ⌄"
+setTextColor(textPrimary)
+textSize = 15f
+setTypeface(null, Typeface.BOLD)
+}
+val statusTv = TextView(ctx).apply {
+text = "Online • Tap for profile & settings"
+setTextColor(textSecondary)
+textSize = 12f
+}
+userInfoCol.addView(usernameTv)
+userInfoCol.addView(statusTv)
+userBar.addView(userInfoCol)
+val bellIcon = TextView(ctx).apply {
+text = "🔔"
+textSize = 18f
+setPadding(DimenUtils.dpToPx(10), DimenUtils.dpToPx(6), DimenUtils.dpToPx(10), DimenUtils.dpToPx(6))
+setOnClickListener {
+StoreStream.getTabsNavigation().selectTab(NavigationTab.MENTIONS, false)
+}
+}
+userBar.addView(bellIcon)
+rvParent.addView(userBar)
+}
+}
+patcher.after(
+"onViewBound",
+View::class.java
+) { param ->
+val view = param.args[0] as? View ?: return@after
+recolorSurfaces(view, onyxBg)
+}
+patcher.after(
+"onViewBound",
+View::class.java
+) { param ->
+val view = param.args[0] as? View ?: return@after
+recolorSurfaces(view, onyxBg)
+}
+patcher.after(
+"onViewBound",
+View::class.java
+) { param ->
+val view = param.args[0] as? View ?: return@after
+recolorSurfaces(view, onyxCard)
+view.background = GradientDrawable().apply {
+setColor(onyxCard)
+cornerRadii = floatArrayOf(
+DimenUtils.dpToPx(24).toFloat(), DimenUtils.dpToPx(24).toFloat(),
+DimenUtils.dpToPx(24).toFloat(), DimenUtils.dpToPx(24).toFloat(),
+0f, 0f, 0f, 0f
+)
+}
+}
+patcher.after(
+"onConfigure",
+Int::class.java,
+ChatListEntry::class.java
+) { param ->
+val itemView = (param.thisObject as WidgetChatListAdapterItemMessage).itemView
+itemView.background = makePill(onyxCard, 14, 0)
+val padH = DimenUtils.dpToPx(10)
+val padV = DimenUtils.dpToPx(6)
+itemView.setPadding(padH, padV, padH, padV)
+}
+patcher.after(
+"onConfigure",
+Int::class.java,
+ChatListEntry::class.java
+) { param ->
+val itemView = (param.thisObject as WidgetChatListAdapterItemEmbed).itemView
+itemView.background = makePill(onyxCard, 16)
+}
+patcher.after(
+"onViewBound",
+View::class.java
+) { param ->
+val rootView = param.args[0] as? View ?: return@after
+val parent = rootView.parent as? ViewGroup ?: return@after
+parent.background = makePill(onyxPill, 24)
+parent.setPadding(DimenUtils.dpToPx(14), DimenUtils.dpToPx(4), DimenUtils.dpToPx(14), DimenUtils.dpToPx(4))
+val giftBtnId = Utils.getResId("chat_input_gift_button", "id")
+if (giftBtnId != 0) {
+parent.rootView.findViewById(giftBtnId)?.visibility = View.GONE
+}
+}
+}
+override fun stop(context: Context) {
+patcher.unpatchAll()
+}
 }
