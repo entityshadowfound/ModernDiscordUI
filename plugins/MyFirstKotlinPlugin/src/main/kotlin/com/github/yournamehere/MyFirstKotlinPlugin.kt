@@ -156,7 +156,13 @@ class ModernDiscordUI : Plugin() {
 
             val scroll = HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; setPadding(0, DimenUtils.dpToPx(12), 0, DimenUtils.dpToPx(4)) }
             val activeRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            val presences: Map<Long, Presence> = StoreStream.getPresences().presences
+            val presencesObj = StoreStream.getPresences()
+val presences = try {
+    val f = presencesObj.javaClass.getDeclaredField("presences")
+    f.isAccessible = true
+    f.get(presencesObj) as? Map<Long, Presence> ?: emptyMap()
+} catch (_: Throwable) { emptyMap() }
+
             val users = StoreStream.getUsers().getUsers()
             var count = 0
             for (entry in presences.entries) {
