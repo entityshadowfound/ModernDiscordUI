@@ -68,7 +68,7 @@ class ModernDiscordUI : Plugin() {
         val navBar = if (navBarId != 0) rootView.rootView.findViewById<ViewGroup>(navBarId) else null
         (navBar?.getChildAt(0) as? ViewGroup)?.getChildAt(tabIndex)?.performClick()
     }
-    override fun start(context: Context) {
+        override fun start(context: Context) {
         patcher.after<AppActivity>("onCreate", Bundle::class.java) { param ->
             val activity = param.thisObject as? Activity ?: return@after
             activity.window?.setBackgroundDrawable(ColorDrawable(onyxBg))
@@ -156,19 +156,19 @@ class ModernDiscordUI : Plugin() {
 
             val scroll = HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; setPadding(0, DimenUtils.dpToPx(12), 0, DimenUtils.dpToPx(4)) }
             val activeRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            val presences: Map<Long, Presence> = StoreStream.getPresences().getPresences()
+            val presenceStore = StoreStream.getPresences()
             val users = StoreStream.getUsers().getUsers()
             var count = 0
-            for (entry in presences.entries) {
+            for (entry in users.entries) {
                 if (count >= 8) break
-                val user = users[entry.key] ?: continue
-                val act = entry.value.activities?.firstOrNull()?.name ?: continue
+                val presence = presenceStore.getPresence(entry.key) ?: continue
+                val act = presence.activities?.firstOrNull()?.getName() ?: continue
                 val card = LinearLayout(ctx).apply {
                     orientation = LinearLayout.VERTICAL; background = makePill(onyxCard, 16)
                     setPadding(DimenUtils.dpToPx(12), DimenUtils.dpToPx(10), DimenUtils.dpToPx(12), DimenUtils.dpToPx(10))
                     layoutParams = LinearLayout.LayoutParams(DimenUtils.dpToPx(135), DimenUtils.dpToPx(88)).apply { marginEnd = DimenUtils.dpToPx(8) }
                 }
-                card.addView(TextView(ctx).apply { text = user.username; setTextColor(textPrimary); textSize = 13f; setTypeface(null, Typeface.BOLD); maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
+                card.addView(TextView(ctx).apply { text = entry.value.username; setTextColor(textPrimary); textSize = 13f; setTypeface(null, Typeface.BOLD); maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
                 card.addView(TextView(ctx).apply { text = "🎮 " + act; setTextColor(textSecondary); textSize = 12f; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(0, DimenUtils.dpToPx(6), 0, 0) })
                 activeRow.addView(card); count++
             }
